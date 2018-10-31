@@ -1,4 +1,5 @@
 
+import copy
 import torch
 import random
 import numpy as np
@@ -51,12 +52,16 @@ class Agent():
 
     def act(self, state, noise=True):
 
+        state = torch.from_numpy(state).float().to(device)
+
+        self.current_model_actor.eval()
+        with torch.no_grad():
+            action = self.current_model_actor(state).cpu().data.numpy()
+        self.current_model_actor.train()
         if noise:
-            action = self.current_model_actor(state) + self.noise.sample()
-        else:
-            action = self.current_model_actor(state)
+            action += self.noise.sample()
             #action = self.current_model.act(state, epsilon).cpu().numpy()
-        return action.cpu().numpy()
+        return np.clip(action, -1, 1)
 
     def step(self, state, action, reward, next_state, done):
 
@@ -88,7 +93,7 @@ class Agent():
         loss.backward()
         self.critic_optimizer.step()
 
-        actions_pred = self.current_model_critic(sampled_state)
+        actions_pred = self.current_model_actor(sampled_state)
         actor_loss = -self.current_model_critic(sampled_state, actions_pred).mean()
 
         self.actor_optimizer.zero_grad()
