@@ -3,134 +3,45 @@ import gym
 import torch
 from collections import deque
 import numpy as np
-torch.set_printoptions(precision=32)
-from pytorch_actor_critic import actor_critic
 
+from pytorch_actor_critic import actor_critic
 import torch.optim as optim
 import torch.nn.functional as F
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-#TODO Causality #1) reward to go. Use cumulative rewards from current to the end.
-'''cumulative_discounted_rewards_togo solves the issue above'''
-#TODO Causality #2) need an efficient way to calculate the cumulative sum of rewards to get the rewards to go.
-'''need to see how to improve cumulative_discounted_rewards_togo() to be more efficient '''
-
-def cumulative_discounted_rewards_togo(array, gamma):
-    '''
-
-    caculates and returns an array with len == len(trajectory) where each element is cumulated discounted rewards to go.
-
-    :param array:
-    :param gamma:
-    :return:
-    '''
-    discount = []
-    cumulative_sum = []
-
-    for i in range(0, len(array)):
-        discount.append(gamma ** i)
-
-    for i in range(1, len(array) + 1):
-        cumulative_sum.append(np.matmul(array[::-1][0:i], discount[0:i][::-1]))
-
-    return cumulative_sum[::-1]
-
-#TODO Batch #3) current accumulates 1 trajectory and update the model, update it so that it accumulates n number of trajectories
-#TODO Baseline #4) Subtract average baseline after getting n number of batches of trajectories.
-
-def batch_mean_adjusting(reward_array, discount, log_probs):
-    '''
-    :param scores:
-    :param reward_array:
-    :param discount:
-    :param log_probs:
-    :param batch_size:
-    :return:
-    '''
-
-    batch_size = len(reward_array)
-
-    total_reward = []
-    for i in range(batch_size):
-        total_reward.append(sum(reward_array[i]))
-
-    average_reward = np.mean(total_reward)
-
-
-    adjusted_rewards = []
-    cumulative_rewards = []
-    for i in range(batch_size):
-        mean_adjusted = (np.asarray(total_reward[i]) - average_reward)
-        adjusted_rewards.append(np.asarray(reward_array[i]) * (mean_adjusted / np.asarray(total_reward[i])))
-        cumulative_rewards.append(cumulative_discounted_rewards_togo(adjusted_rewards[i], discount))
-    batch_rewards = np.concatenate(cumulative_rewards, axis=0)
-
-    policy_loss = []
-    for idx, log_prob in enumerate(log_probs):
-        policy_loss.append(-log_prob * batch_rewards[idx])
-
-    return policy_loss, batch_rewards
-
-
 env = gym.make("Pendulum-v0")
-env.seed(26)
+env.seed(0)
 
 policy = actor_critic(env, seed=86)
+
 optimizer = optim.Adam(policy.parameters(), lr=1e-3)
 
-def reinforce_loop(n_episodes=7500, max_t=1000, gamma=1, print_every=5, batch_size=1):
+def reinforce_loop(n_episodes=3000, max_t=1000, gamma=.99, print_every=10):
 
     scores_deque = deque(maxlen=100)
     scores = []
-    reward_array = []
     saved_log_probs = []
-    states = []
-    next_states = []
 
     for i_episode in range(1, n_episodes + 1):
         rewards = []
         state = env.reset()
-        states.append(state)
 
         for t in range(max_t):
-
             action, log_prob = policy.act(state)
-            action = policy.un_normalizer(action, env.action_space.low[0], env.action_space.high[0])
-
             saved_log_probs.append(log_prob)
-            state, reward, done, _ = env.step(action)
+            next_state, reward, done, _ = env.step(action)
             rewards.append(reward)
-            next_states.append(state)
-
-            if not done:
-                states.append(state)
-
-            if done:
-                break
-
-        scores_deque.append(sum(rewards))
-        scores.append(sum(rewards))
-
-        reward_array.append(rewards)
-        '''accumulates batches of scores'''
-
-        if (i_episode >= batch_size and i_episode % batch_size == 0):
-
             '''Reward to go'''
-            rewards_batch = []
-            for i in range(batch_size):
-                rewards_batch.append(cumulative_discounted_rewards_togo(reward_array[i], gamma=gamma))
-            rewards_batch = np.concatenate(rewards_batch, axis = 0)
-            rewards_batch = torch.from_numpy(np.asarray(rewards_batch)).float().to(device)
 
-            states = torch.from_numpy(np.asarray(states)).float().to(device)
-            next_states = torch.from_numpy(np.asarray(next_states)).float().to(device)
+            rewards_batch = torch.from_numpy(np.asarray(reward)).float().to(device)
+            states = torch.from_numpy(np.asarray(state)).float().to(device)
+            next_states = torch.from_numpy(np.asarray(next_state)).float().to(device)
 
             val_estimate = policy.forward(states, output_choice='val')
             val_estimate_next = policy.forward(next_states, output_choice='val')
 
-            loss = F.mse_loss(val_estimate, rewards_batch.view(rewards_batch.size(0), -1) + gamma * val_estimate_next)
+            loss = F.mse_loss(val_estimate, rewards_batch + gamma * val_estimate_next)
 
             optimizer.zero_grad()
             loss.backward()
@@ -141,27 +52,28 @@ def reinforce_loop(n_episodes=7500, max_t=1000, gamma=1, print_every=5, batch_si
 
             policy_loss = []
 
-            rewards = torch.from_numpy(np.asarray(rewards)).float().to(device)
-            for idx, log_prob in enumerate(saved_log_probs):
-                #print((rewards[idx] + gamma * val_estimate_next[idx] - val_estimate[idx]))
-                policy_loss.append(-log_prob.to(device) * (rewards[idx] + gamma * val_estimate_next[idx] - val_estimate[idx]))
+            policy_loss.append(-log_prob.to(device) * (rewards_batch + gamma * val_estimate_next - val_estimate))
 
-            #print(policy_loss)
-            #print(policy_loss)
-            policy_loss = torch.cat(policy_loss).mean()
+            policy_loss = torch.cat(policy_loss).sum()
 
             optimizer.zero_grad()
             policy_loss.backward()
             optimizer.step()
 
             saved_log_probs = []
-            reward_array = []
-            states = []
-            next_states = []
+
+            state = next_state
+
+            if done:
+                break
+
+        scores_deque.append(sum(rewards))
+        scores.append(sum(rewards))
+        '''accumulates batches of scores'''
 
         if i_episode % print_every == 0:
             print('Episode {}\tAverage Score: {:.2f}'.format(i_episode, np.mean(scores_deque)))
-        if np.mean(scores_deque) >= 500.0:
+        if np.mean(scores_deque) >= 195.0:
             print('Environment solved in {:d} episodes!\tAverage Score: {:.2f}'.format(i_episode - 100,
                                                                                        np.mean(scores_deque)))
             break
