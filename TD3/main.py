@@ -2,9 +2,19 @@
 import gym
 import torch
 from util import NormalizedActions
+from collections import deque
 from agent import Agent
+import numpy as np
 
-env = NormalizedActions(gym.make('Pendulum-v0'))
+from options import options
+
+
+options = options()
+
+opts = options.parse()
+batch = opts.batch
+
+env = NormalizedActions(gym.make('BipedalWalker-v2'))
 
 from IPython.display import clear_output
 import matplotlib.pyplot as plt
@@ -18,39 +28,44 @@ def plot(frame_idx, rewards):
     plt.plot(rewards)
     plt.show()
 
-num_episodes  = 5000
-max_steps   = 500
-frame_idx   = 0
-rewards     = []
-batch_size  = 128
+rewards = []
 
-for eps in range(num_episodes):
+for eps in range(opts.num_episodes):
+    scores_deque = deque(maxlen=100)
+    scores = []
     state = env.reset()
     episode_reward = 0
 
-    for step in range(max_steps):
+    for step in range(opts.max_steps):
 
         if eps % 100 == 0:
             action = policy.act(state, step, False)
         else:
             action = policy.act(state, step)
-        next_state, reward, done, _ = env.step(action)
 
+        next_state, reward, done, _ = env.step(action)
         policy.add_to_memory(state, action, reward, next_state, done)
-        if policy.memory.__len__() > batch_size:
+
+        if policy.memory.__len__() > opts.batch:
             policy.update(step)
 
         state = next_state
         episode_reward += reward
-        frame_idx += 1
-
-        if frame_idx % 1000 == 0:
-            plot(eps, rewards)
+        opts.frame_idx += 1
 
         if done:
-            if eps % 100 == 0:
-                print("\nThis Episode :", eps)
-                print("\nRewards without noise is: ", episode_reward)
             break
+
+    scores_deque.append(episode_reward)
+    scores.append(episode_reward)
+
+    if eps % opts.print_every == 0:
+        print('\rEpisode {}\tAverage Score: {:.2f}'.format(eps, np.mean(scores_deque)))
+
+    if np.mean(scores_deque) >= opts.threshold:
+        print('\nEnvironment solved in {:d} episodes!\tAverage Score: {:.2f}'.format(eps - 100,
+                                                                                     np.mean(scores_deque)))
+
+        break
 
     rewards.append(episode_reward)
