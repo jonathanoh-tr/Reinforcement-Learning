@@ -1,50 +1,41 @@
 
 
-
 import torch
 from torch.optim import Adam
 import torch.nn.functional as F
 import random
 import numpy as np
 
-from pytorch_model import pytorch_DQNetwork
+from pytorch_model import DQNetwork
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 from memory import replayMemory
 
-LR = 5e-4
-MEMORY_SIZE = 1e6
-UPDATE_FREQUENCY = 4
-MIN_MEMORY_SIZE = 1000
-GAMMA = 0.9
-TRANSFER_RATE = 0.001
-
-
 class Agent():
-    def __init__(self, state_space, action_space, seed, batch_size):
+    def __init__(self, state_space, action_space, seed, opts):
 
         self.state_space = state_space
         self.action_space = action_space
         self.seed = random.seed(seed)
-        self.batch_size = batch_size
+        self.opts = opts
+        self.batch_size = opts.batch
 
         '''DQNetwork'''
 
-        self.local_model = pytorch_DQNetwork(state_space, action_space, seed).to(device)
-        self.target_model = pytorch_DQNetwork(state_space, action_space, seed).to(device)
-        self.optimizer = Adam(self.local_model.parameters(), lr=LR)
+        self.local_model = DQNetwork(state_space, action_space, seed).to(device)
+        self.target_model = DQNetwork(state_space, action_space, seed).to(device)
+        self.optimizer = Adam(self.local_model.parameters(), lr=opts.lr)
 
         '''Replay Memory'''
 
-        self.memory = replayMemory(action_space, MEMORY_SIZE, batch_size, seed)
+        self.memory = replayMemory(action_space, opts.memory_size, self.batch_size, seed)
 
         '''How often to update the model'''
 
-        self.update_every = 0
+        self.update_every = opts.update_freq
 
     def step(self, state, action, reward, next_state, done):
         '''
-
         :param state:
         :param action:
         :param reward:
@@ -57,14 +48,13 @@ class Agent():
         self.memory.add(state, action, reward, next_state, done)
 
         self.update_every += 1
-        if(self.update_every % UPDATE_FREQUENCY == 0):
+        if(self.update_every % self.update_every == 0):
             if(len(self.memory) > self.batch_size):
                 experience = self.memory.sample()
-                self.learn(experience, GAMMA)
+                self.learn(experience, self.opts.discount_rate)
 
     def learn(self, experience, gamma):
         '''
-
         :param experience:
         :param gamma:
         :return:
@@ -74,26 +64,20 @@ class Agent():
 
         next_value = self.target_model(sampled_next_state).detach().max(1)[0].unsqueeze(1)
 
-
         DQN_target = sampled_reward + (gamma * next_value * (1 - sampled_done))
 
         DQN_estimation = self.local_model(sampled_state).gather(1, sampled_action)
 
         loss = F.mse_loss(DQN_estimation, DQN_target)
 
-        '''delta for priority reply'''
-        #delta = np.abs(DQN_estimation - DQN_target)
-
-
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        self.soft_update(self.local_model, self.target_model, TRANSFER_RATE)
+        self.soft_update(self.local_model, self.target_model, self.opts.transfer_rate)
 
     def soft_update(self, local_model, target_model, transfer_rate):
         '''
-
         :param local_model:
         :param target_model:
         :param transfer_rate:
@@ -105,7 +89,6 @@ class Agent():
 
     def act(self, state, epsilon=0.):
         '''
-
         :param state:
         :param epsilon:
         :return:
@@ -124,9 +107,4 @@ class Agent():
             action = np.argmax(action_value.cpu().data.numpy())
 
         return action
-
-
-
-
-
 

@@ -6,16 +6,21 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 from agent import Agent
+import util
 
-env = gym.make('MountainCar-v0')
+from options import options
 
-agent = Agent(env.observation_space.shape[0], env.action_space.n, seed= 1234567, batch_size=128)
+options = options()
+opts = options.parse()
 
-env.seed(0)
+env = gym.make(opts.env)
 
-def DQN(num_episodes = 3000, max_iteration = 1000, init_epsilon = 1.0, min_epsilon = 0.05, decay = 0.999):
+agent = Agent(env.observation_space.shape[0], env.action_space.n, opts=opts, seed=0)
+
+env.seed(opts.env_seed)
+
+def DQN(num_episodes = opts.num_episodes, max_iteration = opts.max_iteration, init_epsilon = 1.0, min_epsilon = opts.min_epsilon, decay = opts.decay):
     '''
-
     :param num_episodes:
     :param max_iteration:
     :param init_epsilon:
@@ -54,11 +59,12 @@ def DQN(num_episodes = 3000, max_iteration = 1000, init_epsilon = 1.0, min_epsil
         if i % 100 == 0:
             print('\rEpisode {}\tAverage Score: {:.2f}'.format(i, np.mean(total_reward_window)))
 
-        if np.mean(total_reward_window) >= 200:
+        if np.mean(total_reward_window) >= opts.win_cond:
             print('\nEnvironment solved in {:d} episodes!\tAverage Score: {:.2f}'.format(i - 100,
                                                                                          np.mean(total_reward_window)))
             torch.save(agent.local_model.state_dict(), 'checkpoint.pth')
             break
+
     torch.save(agent.local_model.state_dict(), 'checkpoint_end.pth')
     return total_reward
 
@@ -73,22 +79,6 @@ plt.ylabel('Score')
 plt.xlabel('Episode #')
 plt.show()
 
-
-def render_text_envq(env):
-    env.seed(12456)
-    state = env.reset()
-
-    while True:
-        env.render()
-
-        max_action = agent.act(state)
-        state, reward, done, info = env.step(max_action)
-        print(reward)
-        if (done):
-            print("Environment Terminated")
-            break
-    env.render()
-
-
-render_text_envq(env)
-env.close()
+if opts.render == True:
+    util.render_text_envq(env, agent)
+    env.close()
