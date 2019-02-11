@@ -8,7 +8,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 from torch.distributions import Categorical
 
 class Linear(nn.Module):
-    def __init__(self, dim_in, dim_out, Norm=False):
+    def __init__(self, dim_in, dim_out, Activation=True, Norm=False):
         super(Linear, self).__init__()
 
         steps = [nn.Linear(dim_in, dim_out)]
@@ -16,14 +16,14 @@ class Linear(nn.Module):
         if Norm != False:
             steps.append(nn.BatchNorm1d(dim_out))
 
-        steps.append(nn.ReLU())
+        if Activation != False:
+            steps.append(nn.ReLU())
 
         self.model = nn.Sequential(*steps)
 
     def forward(self, x):
 
         return self.model(x)
-
 
 class Policy(nn.Module):
     def __init__(self, s_size=4, h_size=16, a_size=2):
@@ -35,7 +35,7 @@ class Policy(nn.Module):
             for i in range(len(h_size)-1):
                 steps.append(Linear(h_size[i], h_size[i+1]))
 
-        steps.append(Linear(h_size[-1], a_size))
+        steps.append(Linear(h_size[-1], a_size, Activation=False))
 
         self.model = nn.Sequential(*steps)
 
