@@ -13,10 +13,10 @@ class Linear(nn.Module):
 
         steps = [nn.Linear(dim_in, dim_out)]
 
-        if Norm != False:
+        if Norm:
             steps.append(nn.BatchNorm1d(dim_out))
 
-        if Activation != False:
+        if Activation:
             steps.append(nn.ReLU())
 
         self.model = nn.Sequential(*steps)
