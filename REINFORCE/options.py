@@ -14,7 +14,7 @@ class options():
         self.parser.add_argument('--lr', type=int, nargs='?', default=0.01, help='learning rate')
         self.parser.add_argument('--discount_rate', type=int, nargs='?', default=1, help='rewards discount rate')
         self.parser.add_argument('--transfer_rate', type=int, nargs='?', default=0.001, help='transfer rate for soft update')
-        self.parser.add_argument('--hidden', type=int, nargs='+', default=16, help='hidden layer configuration in a list form')
+        self.parser.add_argument('--hidden', type=int, nargs='+', default=[16, 16], help='hidden layer configuration in a list form')
 
         #Env Options
         self.parser.add_argument('--env', type=str, nargs='?', default='CartPole-v0', help='Name of the OpenAI Env')
